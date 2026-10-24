@@ -50,6 +50,7 @@ user manager (and PHP) running while cog restarts; without it, PHP restarts with
 | `kiosk-url` | URL shown by cog (currently `http://127.0.0.1/kropek.html`) |
 | `php/` | PHP document root, replaced on every deploy (`index.php` = default page) |
 | `repo/` | Clone of GitHub `main` used by deploys |
+| `vad.c`, `vad` | Mic voice-activity detector, run by the `kiosk-vad` service (see [voice.md](voice.md)) |
 | `bin/deploy` | Deploy script (see [deploy.md](deploy.md)) |
 | `kiosk-restart` | Kills cog and waits up to 15 s for it to come back; optional arg sets a new URL first |
 | `kiosk-root-setup.sh` | One-time root setup of the tty1 autologin drop-in |

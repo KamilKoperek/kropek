@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kropek voice</title>
+<style>
+  :root { --bg: #fff; --fg: #111; --muted: #777; --panel: #f2f2f2; --speech: #1a9e4b; --vad: #2563eb; --level: #d97706; }
+  body { font: 16px system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
+  h1 { margin: 0 0 1rem; font-size: 1.6rem; }
+  .top { display: flex; gap: 1rem; flex-wrap: wrap; align-items: stretch; }
+  .state { flex: 1 1 14rem; padding: 1rem; border-radius: .5rem; background: var(--panel); font-size: 2rem; font-weight: 700; text-align: center; }
+  .state.on { background: var(--speech); color: #fff; }
+  .state small { display: block; font-size: .9rem; font-weight: 400; }
+  .meters { flex: 2 1 22rem; display: grid; gap: .6rem; }
+  .meter { display: grid; grid-template-columns: 6rem 1fr 4.5rem; align-items: center; gap: .5rem; }
+  .bar { height: 1.1rem; background: var(--panel); border-radius: .3rem; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  canvas { display: block; width: 100%; height: 200px; margin-top: 1rem; background: var(--panel); border-radius: .5rem; }
+  .legend { color: var(--muted); font-size: .85rem; margin: .3rem 0 1rem; }
+  .legend b { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; vertical-align: -1px; margin: 0 .2rem 0 .8rem; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  td, th { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid var(--panel); }
+  .status { color: var(--muted); font-size: .9rem; }
+  .status.bad { color: #c00; }
+</style>
+<h1>Voice activity</h1>
+<p class="status" id="status">connecting…</p>
+<div class="top">
+  <div class="state" id="state">silence<small id="stateSub">&nbsp;</small></div>
+  <div class="meters">
+    <div class="meter"><span>VAD</span><div class="bar"><i id="vadBar" style="background:var(--vad)"></i></div><span class="num" id="vadNum">–</span></div>
+    <div class="meter"><span>Speech</span><div class="bar"><i id="spBar" style="background:var(--speech)"></i></div><span class="num" id="spNum">–</span></div>
+    <div class="meter"><span>Level</span><div class="bar"><i id="lvBar" style="background:var(--level)"></i></div><span class="num" id="lvNum">–</span></div>
+  </div>
+</div>
+<canvas id="chart" aria-label="Last 10 seconds of VAD probability and input level"></canvas>
+<div class="legend">last 10 s <b style="background:var(--vad)"></b>VAD <b style="background:var(--level)"></b>level (−90…0 dB) <b style="background:var(--speech);opacity:.25"></b>speech segment</div>
+<h2>Speech segments</h2>
+<table><thead><tr><th>Start</th><th>Duration</th><th>Peak VAD</th></tr></thead><tbody id="log"></tbody></table>
+<p><a href="index.html">← back</a></p>
+<script>
+const POLL_MS = 50, FRAME_MS = 10, HISTORY = 1000;            // 1000 frames = 10 s
+const ON = 0.6, OFF = 0.3, HANG = 30;                         // hysteresis; 30 frames = 300 ms hangover
+const SCALE = 0.5;                                            // chart drawn at half resolution, upscaled by CSS
+const MAX_LAG = 25;                                           // >250 ms queued -> catch up instead of drifting
+const $ = id => document.getElementById(id);
+const hist = [], queue = [];                                  // hist: {vad, sp, db, speech}
+let lastSeq = 0, speaking = false, quiet = 0, seg = null, colors = null;
+
+function onFrame([vad, sp, db]) {
+  if (!speaking && vad >= ON) { speaking = true; quiet = 0; seg = { start: new Date(), frames: 0, peak: 0 }; }
+  if (speaking) {
+    seg.frames++; seg.peak = Math.max(seg.peak, vad);
+    quiet = vad < OFF ? quiet + 1 : 0;
+    if (quiet >= HANG) { speaking = false; logSegment(seg, seg.frames - HANG); seg = null; }
+  }
+  hist.push({ vad, sp, db, speech: speaking });
+  if (hist.length > HISTORY) hist.shift();
+}
+
+function logSegment(s, frames) {
+  const tr = document.createElement('tr');
+  for (const v of [s.start.toLocaleTimeString(), (frames * FRAME_MS / 1000).toFixed(2) + ' s', s.peak.toFixed(2)]) {
+    const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+  }
+  const log = $('log'); log.prepend(tr);
+  while (log.children.length > 50) log.lastChild.remove();
+}
+
+const shown = {};
+function setText(id, v) { if (shown[id] !== v) { shown[id] = v; $(id).textContent = v; } }
+function setWidth(id, pct) { const v = pct.toFixed(1) + '%'; if (shown[id] !== v) { shown[id] = v; $(id).style.width = v; } }
+
+function render() {
+  const f = hist[hist.length - 1];
+  if (f) {
+    setWidth('vadBar', f.vad * 100); setText('vadNum', f.vad.toFixed(2));
+    setWidth('spBar', f.sp); setText('spNum', f.sp.toFixed(0) + '%');
+    setWidth('lvBar', (f.db + 90) / 90 * 100); setText('lvNum', f.db.toFixed(0) + ' dB');
+  }
+  const st = $('state'), cls = 'state' + (speaking ? ' on' : '');
+  if (st.className !== cls) { st.className = cls; st.firstChild.textContent = speaking ? 'SPEECH' : 'silence'; }
+  setText('stateSub', speaking ? (seg.frames * FRAME_MS / 1000).toFixed(1) + ' s' : ' ');
+  drawChart();
+}
+
+function drawChart() {
+  const c = $('chart');
+  const w = Math.max(1, Math.round(c.clientWidth * SCALE)), h = Math.max(1, Math.round(c.clientHeight * SCALE));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  if (!colors) {
+    const css = getComputedStyle(document.documentElement);
+    colors = { speech: css.getPropertyValue('--speech'), vad: css.getPropertyValue('--vad'), level: css.getPropertyValue('--level') };
+  }
+  const g = c.getContext('2d'); g.clearRect(0, 0, w, h);
+  // one column per canvas pixel: max of the frames that fall into it
+  const cols = [], off = HISTORY - hist.length;
+  hist.forEach((f, i) => {
+    const x = Math.floor((i + off) / HISTORY * w), col = cols[x];
+    if (!col) cols[x] = { vad: f.vad, lv: (f.db + 90) / 90, speech: f.speech };
+    else { col.vad = Math.max(col.vad, f.vad); col.lv = Math.max(col.lv, (f.db + 90) / 90); col.speech ||= f.speech; }
+  });
+  g.fillStyle = colors.speech; g.globalAlpha = .25;
+  cols.forEach((col, x) => { if (col.speech) g.fillRect(x, 0, 1, h); });
+  g.globalAlpha = 1; g.lineWidth = 1;
+  for (const [color, key] of [[colors.level, 'lv'], [colors.vad, 'vad']]) {
+    g.strokeStyle = color; g.beginPath(); let first = true;
+    cols.forEach((col, x) => { const y = h - col[key] * (h - 2) - 1; first ? g.moveTo(x, y) : g.lineTo(x, y); first = false; });
+    g.stroke();
+  }
+}
+
+// feed queued frames at real time (10 ms each) on every animation frame -> smooth scrolling
+let lastT = null, due = 0;
+function tick(t) {
+  if (lastT !== null) due += (t - lastT) / FRAME_MS;
+  lastT = t;
+  let n = Math.min(queue.length, Math.floor(due));
+  if (queue.length - n > MAX_LAG) n = queue.length - MAX_LAG / 2;
+  due = queue.length ? due - Math.floor(due) : 0;
+  if (n > 0) { queue.splice(0, n).forEach(onFrame); render(); }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+async function poll() {
+  try {
+    const d = await (await fetch('vad.php', { cache: 'no-store' })).json();
+    if (d.age === null || d.age > 2) {
+      setText('status', 'no data from the microphone service (kiosk-vad)'); $('status').className = 'status bad';
+    } else {
+      setText('status', 'live'); $('status').className = 'status';
+      if (d.seq < lastSeq) lastSeq = 0;                       // service restarted
+      const fresh = Math.min(d.seq - lastSeq, d.frames.length);
+      queue.push(...d.frames.slice(d.frames.length - fresh));
+      lastSeq = d.seq;
+    }
+  } catch (e) {
+    setText('status', 'server unreachable'); $('status').className = 'status bad';
+  }
+  setTimeout(poll, POLL_MS);
+}
+poll();
+</script>
+</html>
