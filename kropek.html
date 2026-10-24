@@ -13,11 +13,19 @@
   /* Separate element so the canvas's contrast filter doesn't apply to it. */
   #fps { position: fixed; top: 8px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
          font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; pointer-events: none; }
+  /* Test control: overrides the microphone's speech % (also ?speech=NN in the URL). */
+  #test { position: fixed; top: 34px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
+          font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; display: flex; gap: 6px; align-items: center; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="fps">-- fps</div>
+<div id="test">
+  <label><input type="checkbox" id="testOn"> test speech</label>
+  <input type="range" id="testSpeech" min="0" max="100" value="0" aria-label="Test speech %">
+  <output id="testVal">0%</output>
+</div>
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -50,23 +58,34 @@ let tick = 0;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => Math.min(Math.max(v, 0), 1);
 
-// Mood from the microphone (vad.php, fed by the kiosk-vad service): loud sound that is not speech
-// makes it nervous, a voice calms it. Both 0..1, smoothed in step(); without mic data both stay 0
+// Mood from the microphone (vad.php, fed by the kiosk-vad service): speech over 40 % calms it,
+// anything under makes it nervous. Both 0..1, smoothed in step(); without mic data both stay 0
 // and the creature behaves as it always did.
 const mood = { nerve: 0, calm: 0, wantNerve: 0, wantCalm: 0 };
+function setSpeech(speech) {
+  mood.wantCalm = speech >= 40 ? 1 : 0;                             // over 40 % speech: calm, under: nervous
+  mood.wantNerve = 1 - mood.wantCalm;
+}
+// Test override: checkbox + slider replace the mic's speech %.
+const testOn = document.getElementById('testOn'), testSpeech = document.getElementById('testSpeech');
+const showTest = () => { document.getElementById('testVal').textContent = testSpeech.value + '%'; };
+testSpeech.addEventListener('input', () => { testOn.checked = true; showTest(); });
+const speechParam = new URLSearchParams(location.search).get('speech');
+if (speechParam !== null) { testOn.checked = true; testSpeech.value = speechParam; }
+showTest();
+
 let vadSeq = 0;
 async function pollMood() {
+  if (testOn.checked) { setSpeech(+testSpeech.value); setTimeout(pollMood, 100); return; }
   try {
     const d = await (await fetch('vad.php', { cache: 'no-store' })).json();
     const fresh = d.frames.slice(d.frames.length - Math.min(Math.max(d.seq - vadSeq, 0), d.frames.length));
     vadSeq = d.seq;
     if (d.age === null || d.age > 2) mood.wantNerve = mood.wantCalm = 0;
     else if (fresh.length) {
-      let vad = 0, db = -90;
-      for (const [v, , l] of fresh) { vad += v; db = Math.max(db, l); } // peak level catches bangs
-      vad /= fresh.length;
-      mood.wantCalm = clamp01((vad - 0.4) / 0.5);                   // VAD 0.4..0.9 -> 0..1
-      mood.wantNerve = clamp01((db + 45) / 15) * (1 - mood.wantCalm); // -45 dB (quiet room ~-47) .. -30 dB
+      let speech = 0;
+      for (const [, sp] of fresh) speech += sp;
+      setSpeech(speech / fresh.length);                             // speech % of the last ~100 ms
     }
   } catch (e) {
     mood.wantNerve = mood.wantCalm = 0;
@@ -93,8 +112,8 @@ function startCrouch() {
   const dist = Math.hypot(tx - brain.x, ty - brain.y);
   if (dist < 150) return false; // not worth a jump
   Object.assign(brain, {
-    mode: 'crouch', want: 0, timer: rand(12, 30),
-    jump: { sx: brain.x, sy: brain.y, tx, ty, dist, u: 0, dur: Math.min(Math.max(dist / 45, 9), 22),
+    mode: 'crouch', want: 0, timer: rand(12, 30) * (1 - mood.nerve * 0.7),
+    jump: { sx: brain.x, sy: brain.y, tx, ty, dist, u: 0, dur: Math.min(Math.max(dist / 45, 9), 22) / (1 + mood.nerve * 0.5),
             arc: rand(-0.4, 0.4) }, // sideways bow so leaps curve instead of going straight
   });
   for (const td of tendrils) if (td.state !== 'wait') td.state = 'shrink';
@@ -117,7 +136,7 @@ function leap() {
     // often just long enough to bounce straight into the next leap.
     splat(brain.x, brain.y, Math.hypot(dx, dy) / j.dur);
     Object.assign(brain, { mode: 'crawl', angle: Math.atan2(dy, dx), turn: 0, speed: 0, want: 0,
-                           timer: Math.random() < 0.5 ? rand(8, 20) : rand(30, 70) });
+                           timer: (Math.random() < 0.5 ? rand(8, 20) : rand(30, 70)) * (1 - mood.nerve * 0.8) });
   }
 }
 // Impact: blobs near the landing spot get flung outward, then get pulled back in.
@@ -138,6 +157,7 @@ function wander() {
     return;
   }
   if (brain.mode === 'leap') return leap();
+  if (Math.random() < mood.nerve * 0.03) return startle();   // nervous: jumps out of nowhere
 
   brain.turn = (brain.turn + rand(-0.012, 0.012) * (1 + mood.nerve * 8)) * 0.97;
   if (Math.random() < mood.nerve * 0.1) { brain.angle += rand(-2, 2); brain.speed += rand(3, 6) * mood.nerve; } // dart
@@ -150,9 +170,9 @@ function wander() {
   brain.angle += brain.turn;
   if (--brain.timer <= 0) {
     const r = Math.random();
-    if (r < 0.45 * (1 - mood.calm) && startCrouch()) return;
+    if (r < (0.45 + mood.nerve * 0.5) * (1 - mood.calm) && startCrouch()) return;
     brain.want = r < 0.6 - mood.nerve * 0.4 ? 0 : r < 0.75 ? rand(5, 8) : rand(1, 3); // rest / lunge / crawl
-    brain.timer = rand(40, 140) * (1 - mood.nerve * 0.7) * (1 + mood.calm);
+    brain.timer = rand(40, 140) * (1 - mood.nerve * 0.85) * (1 + mood.calm);
   }
   // applied every frame so mood acts at once: nervous never rests (restless pacing), calm sits still
   const want = Math.max(brain.want, mood.nerve * 6) * (1 - mood.calm);
@@ -202,7 +222,6 @@ function bodyPoint(u) {
   shape = 1 + (shape - 1) * (1 - mood.calm);                                          // calm: round
   const r = BODY_R * u.r * shape * (1 - body.squash)
     * (1 + 0.08 * Math.sin(tick * 0.05 + u.ph)
-         + mood.nerve * 0.12 * Math.sin(tick * 0.9 + u.ph * 3)  // shiver
          + mood.calm * 0.18 * Math.sin(tick * 0.09));            // slow, deep breath
   const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
   // Scale along the travel direction, thin across it (roughly area-preserving).
@@ -229,7 +248,7 @@ const tendrils = Array.from({ length: TENDRILS }, () => { const td = {}; resetTe
 function updateTendrils() {
   for (const td of tendrils) {
     td.angle += Math.sin(tick * 0.015 + td.ph) * 0.008;
-    if (td.state === 'wait' && Math.random() < mood.nerve * 0.12) { td.max = rand(40, 110); td.state = 'grow'; }
+    if (td.state === 'wait' && Math.random() < mood.nerve * 0.03) { td.max = rand(40, 110); td.state = 'grow'; }
     if (mood.calm > 0.4 && (td.state === 'grow' || td.state === 'hold')) td.state = 'shrink';
     if (td.state === 'grow') {
       td.len += (td.max - td.len) * 0.25;
@@ -351,7 +370,7 @@ function step() {
     // Soft spring toward its target: small bits are quick and whippy,
     // the big body is heavier and lags.
     const k = (brain.mode === 'leap' ? 0.045 : 0.02) / Math.pow(p.m, 0.2);
-    const jit = 0.08 * (1 + mood.nerve * 12) * (1 - mood.calm * 0.7);
+    const jit = 0.08 * (1 + mood.nerve * 1.5) * (1 - mood.calm * 0.7);
     p.vx += dx * k + (dx / d) * 0.1 + rand(-jit, jit);
     p.vy += dy * k + (dy / d) * 0.1 + rand(-jit, jit);
     p.vx *= 0.88; p.vy *= 0.88;
@@ -376,8 +395,9 @@ function blobPath(p, r, t, beat) {
   const dir = Math.atan2(mvy, mvx);
   const stretch = Math.min(speed * 0.14, 1.4);   // droplet elongation along travel
   const amp = Math.min(0.06 + p.m * 0.004, 0.26) // heavier blobs wobble more
-    * (1 + mood.nerve * 2) * (1 - mood.calm * 0.6);
-  const n = Math.min(24 + Math.round(r * 2), 128); // vertices per blob outline: more = smoother edges
+    * (1 + mood.nerve * 0.4) * (1 - mood.calm * 0.6);
+  // vertices per blob outline, scaled to buffer pixels: the low-res buffer and blur hide finer detail
+  const n = Math.min(Math.max(Math.round(r * RES * 4), 10), 40);
   for (let i = 0; i <= n; i++) {
     const a = (i / n) * Math.PI * 2;
     let k = 1

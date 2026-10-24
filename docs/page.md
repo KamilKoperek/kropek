@@ -41,18 +41,28 @@ Method: a temporary copy reported timings via `fetch('/fps-beacon?...')`, read f
 
 ## Reacts to the microphone
 
-`kropek.html` polls `vad.php` every 100 ms (same data as `voice.html`, see [voice.md](voice.md)) and keeps a `mood`:
-
-- `wantCalm = clamp((VAD − 0.4) / 0.5)` — a voice calms it
-- `wantNerve = clamp((peak dB + 50) / 25) × (1 − wantCalm)` — loud non-speech (noise, bangs) makes it nervous
-- smoothed per frame in `updateMood()`: nerve rises fast (startle) and settles slowly; calm builds gently and lingers
+`kropek.html` polls `vad.php` every 100 ms (same data as `voice.html`, see [voice.md](voice.md)) and averages the
+**speech %** of the new frames: **≥ 40 % → calm, < 40 % → nervous** (`setSpeech()`).
+`updateMood()` smooths it per frame: nerve rises fast and settles slowly; calm builds over ~1–2 s and lingers.
 
 | | Nervous (`mood.nerve`) | Calm (`mood.calm`) |
 |---|---|---|
-| Movement | twitchy steering, sudden darts, shorter pauses, more lunges | slower, longer pauses, far fewer leaps |
-| Body | stronger lobes, shivering, more outline wobble, more jitter | rounder, slow breathing, less wobble/jitter |
-| Tendrils | flick out on their own, whip harder | stay in |
-| Heartbeat | up to ~2.2× faster | ~35 % slower |
+| Movement | restless (never rests), darts, frequent leaps: spontaneous jumps, short wind-up, quicker flight, bounces on landing; a sudden rise in nerve makes it bolt | sits in one place, no leaps |
+| Body | 11 sharp rotating spikes, whole-body trembling (±4 px) | perfectly round, slow breathing |
+| Tendrils | occasionally flick out, whip harder | pulled in |
+| Heartbeat | up to 2.5× faster | 40 % slower |
 
-The fps box also shows `nerve` / `calm` live. Without mic data both stay 0 (original behaviour).
-Tune thresholds in `pollMood()`: the quiet room peaks around −47 dB, so nerve idles at ~0.1–0.2.
+Per-particle jitter is kept low on purpose; strong jitter made the body look like it was boiling.
+Without mic data both stay 0 (original behaviour).
+
+### Test override
+
+The box under the fps counter has a **test speech** checkbox + slider (0–100 %) that replaces the mic.
+On the kiosk use the URL: `./kiosk-restart 'http://127.0.0.1/kropek.html?speech=80'` (calm) or `?speech=10`
+(nervous); `./kiosk-restart http://127.0.0.1/kropek.html` returns to the mic. `kiosk-url` keeps the override across reboots.
+
+## Performance (single-core AMD G-T44R @ 1.2 GHz; `vad` takes ~35 % of it)
+
+Blob outlines use 10–40 vertices scaled to buffer pixels (`r * RES * 4`) instead of up to 128: the low-res
+buffer and blur hide finer detail. Measured steady state: ~37 fps nervous (~75 blobs), ~42–48 fps calm (~25 blobs).
+The next cost to cut would be `mergeClose()` (O(n²) in blobs).
