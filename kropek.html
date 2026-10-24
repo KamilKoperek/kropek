@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Symbiote</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
+  /* The canvas is drawn small and blurred (see draw()); the browser upscales it smoothly and
+     high contrast snaps the soft edges back to a crisp liquid outline (metaball / gooey effect).
+     Contrast is a cheap per-pixel op, unlike a full-screen CSS blur. */
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; filter: contrast(40); }
+  /* Separate element so the canvas's contrast filter doesn't apply to it. */
+  #fps { position: fixed; top: 8px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
+         font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fps">-- fps</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+// Shapes are drawn into this buffer, then blurred onto the visible canvas.
+const buf = document.createElement('canvas');
+const bctx = buf.getContext('2d');
+// Render resolution relative to CSS pixels. The blur hides the low resolution,
+// and it cuts the pixels to fill and blur by ~10x (more on high-DPI screens).
+const RES = 1; // full resolution (the kiosk screen is only 1024x768, so this stays cheap)
+const BLUR = 6 * RES; // 6 CSS px of blur, in buffer pixels
+
+const COUNT = 420;          // number of unit points (total mass)
+const BASE_R = 6;           // radius of a mass-1 point (must exceed the blur or dots vanish)
+const MAX_SPEED = 30;
+const SPAN = BASE_R * 2.5;  // how far apart unit targets may be and still share a blob
+const TENDRILS = 7;         // feelers the creature shoots out and pulls back
+const TENDRIL_POINTS = 12;  // unit points per feeler
+
+let W, H;
+function resize() {
+  W = innerWidth; H = innerHeight;
+  canvas.width = buf.width = Math.ceil(W * RES);
+  canvas.height = buf.height = Math.ceil(H * RES);
+  bctx.setTransform(RES, 0, 0, RES, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+let tick = 0;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// The creature's "will": it wanders with smooth random turns, crawling,
+// pausing and occasionally lunging, and turns back before leaving the screen.
+// Sometimes it crouches (pulls its feelers in) and then leaps across the screen.
+const brain = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: rand(0, Math.PI * 2), turn: 0, speed: 1.5, want: 1.5, timer: 0, mode: 'crawl' };
+function startCrouch() {
+  const margin = Math.min(W, H) * 0.15;
+  const tx = rand(margin, W - margin), ty = rand(margin, H - margin);
+  const dist = Math.hypot(tx - brain.x, ty - brain.y);
+  if (dist < 150) return false; // not worth a jump
+  Object.assign(brain, {
+    mode: 'crouch', want: 0, timer: rand(12, 30),
+    jump: { sx: brain.x, sy: brain.y, tx, ty, dist, u: 0, dur: Math.min(Math.max(dist / 45, 9), 22),
+            arc: rand(-0.4, 0.4) }, // sideways bow so leaps curve instead of going straight
+  });
+  for (const td of tendrils) if (td.state !== 'wait') td.state = 'shrink';
+  return true;
+}
+function leap() {
+  const j = brain.jump;
+  j.u = Math.min(j.u + 1 / j.dur, 1);
+  const e = 1 - Math.pow(1 - j.u, 3); // explosive take-off, soft landing
+  const dx = j.tx - j.sx, dy = j.ty - j.sy;
+  const bow = Math.sin(Math.PI * e) * j.arc;
+  brain.x = Math.min(Math.max(j.sx + dx * e - dy * bow, 0), W);
+  brain.y = Math.min(Math.max(j.sy + dy * e + dx * bow, 0), H);
+  if (j.u >= 1) {
+    // Land with a splat, keep facing the way it flew, and gather itself briefly,
+    // often just long enough to bounce straight into the next leap.
+    splat(brain.x, brain.y, Math.hypot(dx, dy) / j.dur);
+    Object.assign(brain, { mode: 'crawl', angle: Math.atan2(dy, dx), turn: 0, speed: 0, want: 0,
+                           timer: Math.random() < 0.5 ? rand(8, 20) : rand(30, 70) });
+  }
+}
+// Impact: blobs near the landing spot get flung outward, then get pulled back in.
+function splat(x, y, force) {
+  for (const p of particles) {
+    const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy) + 1;
+    if (d > 160) continue;
+    const kick = force * 0.5 * (1 - d / 160) / Math.pow(p.m, 0.25);
+    p.vx += (dx / d) * kick; p.vy += (dy / d) * kick;
+  }
+  // Feelers lash out on impact.
+  for (const td of tendrils) if (td.state === 'wait' && Math.random() < 0.6) td.state = 'grow';
+}
+function wander() {
+  if (brain.mode === 'crouch') {
+    brain.speed *= 0.85;
+    if (--brain.timer <= 0) brain.mode = 'leap';
+    return;
+  }
+  if (brain.mode === 'leap') return leap();
+
+  brain.turn = (brain.turn + rand(-0.012, 0.012)) * 0.97;
+  const margin = Math.min(W, H) * 0.2;
+  if (brain.x < margin || brain.x > W - margin || brain.y < margin || brain.y > H - margin) {
+    const home = Math.atan2(H / 2 - brain.y, W / 2 - brain.x);
+    const diff = Math.atan2(Math.sin(home - brain.angle), Math.cos(home - brain.angle));
+    brain.turn += diff * 0.003;
+  }
+  brain.angle += brain.turn;
+  if (--brain.timer <= 0) {
+    const r = Math.random();
+    if (r < 0.45 && startCrouch()) return;
+    brain.want = r < 0.6 ? 0 : r < 0.75 ? rand(5, 8) : rand(1, 3); // rest / lunge / crawl
+    brain.timer = rand(40, 140);
+  }
+  brain.speed += (brain.want - brain.speed) * 0.03;
+  brain.x = Math.min(Math.max(brain.x + Math.cos(brain.angle) * brain.speed, 0), W);
+  brain.y = Math.min(Math.max(brain.y + Math.sin(brain.angle) * brain.speed, 0), H);
+}
+
+// Body points sit at spots inside a disc around the brain that slowly churn.
+// The disc squashes while crouching and stretches along the direction of travel,
+// most of all mid-leap, so the whole body deforms as one mass.
+const BODY_R = 55;
+const body = { stretch: 0, squash: 0, dirX: 1, dirY: 0 };
+// Shape deformation: a few slowly drifting lobes (2..5 around the rim) plus one
+// soft bulge that swells out in some direction and sinks back, like the mass
+// is shifting inside. Strongest while it sits still.
+const lobes = [2, 3, 4, 5].map(k => ({ k, amp: 0, want: 0, ph: rand(0, Math.PI * 2), spd: rand(-0.02, 0.02) }));
+const bulge = { angle: 0, amp: 0, want: 0, timer: 0 };
+function updateBody() {
+  const s = Math.hypot(brain.vx, brain.vy);
+  const calm = brain.mode === 'crawl' ? 1 - Math.min(s / 4, 0.7) : 0.2;
+  for (const l of lobes) {
+    if (Math.random() < 0.01) l.want = rand(0, 0.35 / l.k);
+    l.amp += (l.want * calm - l.amp) * 0.02;
+    l.ph += l.spd;
+  }
+  if (--bulge.timer <= 0) {
+    if (bulge.want > 0) bulge.want = 0;
+    else { bulge.want = rand(0.3, 0.7); bulge.angle = rand(0, Math.PI * 2); }
+    bulge.timer = rand(60, 180);
+  }
+  bulge.amp += (bulge.want * calm - bulge.amp) * 0.03;
+  bulge.angle += Math.sin(tick * 0.01) * 0.01;
+
+  if (s > 0.5) { body.dirX = brain.vx / s; body.dirY = brain.vy / s; }
+  const want = brain.mode === 'leap' ? Math.min(s * 0.03, 1.3) : Math.min(s * 0.05, 0.3);
+  body.stretch += (want - body.stretch) * 0.25;
+  body.squash += ((brain.mode === 'crouch' ? 0.35 : 0) - body.squash) * 0.15;
+}
+function bodyPoint(u) {
+  const a = u.a + tick * u.spin;
+  let shape = 1;
+  for (const l of lobes) shape += l.amp * Math.sin(l.k * a + l.ph);
+  const da = Math.atan2(Math.sin(a - bulge.angle), Math.cos(a - bulge.angle));
+  shape += bulge.amp * Math.exp(-da * da / 0.5);
+  const r = BODY_R * u.r * shape * (1 + 0.08 * Math.sin(tick * 0.05 + u.ph)) * (1 - body.squash);
+  const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
+  // Scale along the travel direction, thin across it (roughly area-preserving).
+  const st = 1 + body.stretch;
+  const along = (ox * body.dirX + oy * body.dirY) * st;
+  const across = (-ox * body.dirY + oy * body.dirX) / Math.sqrt(st);
+  return {
+    x: brain.x + along * body.dirX - across * body.dirY,
+    y: brain.y + along * body.dirY + across * body.dirX,
+  };
+}
+
+// Feelers: hidden inside the body until a landing impact makes them lash out
+// briefly in random directions, curling and whipping, then get sucked back in.
+function resetTendril(td) {
+  td.angle = rand(0, Math.PI * 2);
+  td.max = rand(40, 110);
+  td.curl = rand(-1.5, 1.5);
+  td.ph = rand(0, Math.PI * 2);
+  td.len = 0;
+  td.state = 'wait';
+}
+const tendrils = Array.from({ length: TENDRILS }, () => { const td = {}; resetTendril(td); return td; });
+function updateTendrils() {
+  for (const td of tendrils) {
+    td.angle += Math.sin(tick * 0.015 + td.ph) * 0.008;
+    if (td.state === 'grow') {
+      td.len += (td.max - td.len) * 0.25;
+      if (td.len > td.max * 0.95) { td.state = 'hold'; td.timer = rand(8, 30); }
+    } else if (td.state === 'hold' && --td.timer <= 0) td.state = 'shrink';
+    else if (td.state === 'shrink') {
+      td.len *= 0.85;
+      if (td.len < 2) resetTendril(td);
+    }
+  }
+}
+function tendrilPoint(td, f) {
+  const base = brain;
+  const a = td.angle + td.curl * f * f + Math.sin(tick * 0.09 + td.ph + f * 5) * 0.4 * f;
+  return { x: base.x + Math.cos(a) * td.len * f, y: base.y + Math.sin(a) * td.len * f };
+}
+
+// Each unit point has somewhere it wants to be: a spot in the body, or a spot
+// along one of the feelers.
+function unitTarget(u) {
+  return u.td ? tendrilPoint(u.td, u.f) : bodyPoint(u);
+}
+
+const radius = m => BASE_R * Math.sqrt(m);
+
+// A blob is a clump of unit points; it steers toward the mean of their targets.
+function makeBlob(x, y, vx, vy, units) {
+  return { x, y, vx, vy, units, m: units.length, ph: rand(0, Math.PI * 2), tx: x, ty: y };
+}
+function updateTarget(p) {
+  let sx = 0, sy = 0;
+  for (const u of p.units) { sx += u.tx; sy += u.ty; }
+  p.m = p.units.length;
+  p.tx = sx / p.m; p.ty = sy / p.m;
+}
+
+let particles = [];
+for (let i = 0; i < COUNT; i++) {
+  const u = i < TENDRILS * TENDRIL_POINTS
+    ? { td: tendrils[i % TENDRILS], f: (Math.floor(i / TENDRILS) + 1) / TENDRIL_POINTS }
+    : { a: rand(0, Math.PI * 2), r: Math.sqrt(Math.random()), spin: rand(-0.004, 0.004), ph: rand(0, Math.PI * 2) };
+  particles.push(makeBlob(rand(0, W), rand(0, H), rand(-1, 1), rand(-1, 1), [u]));
+}
+
+function computeTargets() {
+  for (const p of particles) {
+    for (const u of p.units) { const t = unitTarget(u); u.tx = t.x; u.ty = t.y; }
+    updateTarget(p);
+  }
+}
+
+// A blob tears off whichever point wants to be farthest from it once that
+// distance exceeds the span: this is what stretches the body and feelers out.
+function splitBlobs() {
+  const out = [];
+  for (const p of particles) {
+    out.push(p);
+    for (let n = 0; n < 6 && p.m > 1; n++) {
+      let far = -1, farD = SPAN * 1.3; // a bit looser than merging, so blobs don't flicker
+      p.units.forEach((u, i) => {
+        const d = Math.hypot(u.tx - p.tx, u.ty - p.ty);
+        if (d > farD) { far = i; farD = d; }
+      });
+      if (far < 0) break;
+      const [u] = p.units.splice(far, 1);
+      updateTarget(p);
+      const ux = (u.tx - p.tx) / farD, uy = (u.ty - p.ty) / farD;
+      const off = radius(p.m);
+      const b = makeBlob(p.x + ux * off, p.y + uy * off, p.vx, p.vy, [u]);
+      updateTarget(b);
+      out.push(b);
+    }
+  }
+  particles = out;
+}
+
+// Blobs merge only when they touch AND want to be in the same place, so
+// neighbours fuse into one mass but the body and feelers keep their shape.
+function mergeClose() {
+  for (let i = 0; i < particles.length; i++) {
+    const a = particles[i];
+    if (!a) continue;
+    for (let j = i + 1; j < particles.length; j++) {
+      const b = particles[j];
+      if (!b) continue;
+      const r = radius(a.m) + radius(b.m);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      if (dx * dx + dy * dy > r * r * 0.64) continue;
+      if (Math.hypot(b.tx - a.tx, b.ty - a.ty) > SPAN) continue;
+      const m = a.m + b.m;
+      a.x = (a.x * a.m + b.x * b.m) / m;
+      a.y = (a.y * a.m + b.y * b.m) / m;
+      a.vx = (a.vx * a.m + b.vx * b.m) / m;
+      a.vy = (a.vy * a.m + b.vy * b.m) / m;
+      a.units = a.units.concat(b.units);
+      updateTarget(a);
+      particles[j] = null;
+    }
+  }
+  particles = particles.filter(Boolean);
+}
+
+function step() {
+  tick++;
+  const px = brain.x, py = brain.y;
+  wander();
+  brain.vx = brain.x - px; brain.vy = brain.y - py;
+  updateBody();
+  updateTendrils();
+  computeTargets();
+
+  for (const p of particles) {
+    const dx = p.tx - p.x, dy = p.ty - p.y;
+    const d = Math.hypot(dx, dy) + 0.001;
+    // Soft spring toward its target: small bits are quick and whippy,
+    // the big body is heavier and lags.
+    const k = (brain.mode === 'leap' ? 0.045 : 0.02) / Math.pow(p.m, 0.2);
+    p.vx += dx * k + (dx / d) * 0.1 + rand(-0.08, 0.08);
+    p.vy += dy * k + (dy / d) * 0.1 + rand(-0.08, 0.08);
+    p.vx *= 0.88; p.vy *= 0.88;
+    const s = Math.hypot(p.vx, p.vy);
+    if (s > MAX_SPEED) { p.vx *= MAX_SPEED / s; p.vy *= MAX_SPEED / s; }
+    // Everything is carried along with the brain, so a leap moves the whole
+    // creature at once instead of leaving a streak behind it.
+    const cx = brain.vx * 0.85, cy = brain.vy * 0.85;
+    p.x += p.vx + cx; p.y += p.vy + cy;
+    p.mvx = p.vx + cx; p.mvy = p.vy + cy;
+  }
+
+  splitBlobs();
+  mergeClose();
+}
+
+// Outline of a blob: a circle whose radius is perturbed by a few slowly drifting
+// harmonics, so bigger blobs undulate and bulge like a drop of liquid.
+function blobPath(p, r, t, beat) {
+  const mvx = p.mvx || 0, mvy = p.mvy || 0;
+  const speed = Math.hypot(mvx, mvy);
+  const dir = Math.atan2(mvy, mvx);
+  const stretch = Math.min(speed * 0.14, 1.4);   // droplet elongation along travel
+  const amp = Math.min(0.06 + p.m * 0.004, 0.26); // heavier blobs wobble more
+  const n = Math.min(24 + Math.round(r * 2), 128); // vertices per blob outline: more = smoother edges
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    let k = 1
+      + amp * Math.sin(2 * a + t * 1.3 + p.ph)
+      + amp * 0.7 * Math.sin(3 * a - t * 1.7 + p.ph * 2.1)
+      + amp * 0.5 * Math.sin(5 * a + t * 2.3 + p.ph * 3.7)
+      + amp * 0.3 * Math.sin(7 * a - t * 2.9 + p.ph * 5.3)
+      + amp * 0.25 * Math.sin(11 * a + t * 4.1 + p.ph * 7.1);
+    k *= 1 + beat * Math.min(p.m * 0.002, 0.08);
+    // Fat front, tapered tail: a teardrop pointing the way it moves.
+    const rel = Math.cos(a - dir);
+    k *= 1 + stretch * (rel > 0 ? rel * 0.8 : rel * rel * 1.8);
+    const x = p.x + Math.cos(a) * r * k, y = p.y + Math.sin(a) * r * k;
+    i === 0 ? bctx.moveTo(x, y) : bctx.lineTo(x, y);
+  }
+  bctx.closePath();
+}
+
+function draw() {
+  const t = performance.now() / 1000;
+  // Heartbeat: a sharp double-thump every ~1.2 s, stronger in bigger masses.
+  const beat = Math.pow(Math.max(Math.sin(t * 5.2), 0), 8) + 0.6 * Math.pow(Math.max(Math.sin(t * 5.2 - 0.9), 0), 8);
+  bctx.clearRect(0, 0, W, H);
+  bctx.fillStyle = '#000';
+  bctx.beginPath();
+  for (const p of particles) blobPath(p, radius(p.m), t, beat);
+  bctx.fill();
+
+  ctx.filter = 'none';
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.filter = `blur(${BLUR}px)`;
+  ctx.drawImage(buf, 0, 0);
+}
+
+// FPS counter: frames counted over ~0.5 s windows.
+const fpsEl = document.getElementById('fps');
+let fpsFrames = 0, fpsSince = performance.now();
+function loop() {
+  step();
+  draw();
+  fpsFrames++;
+  const now = performance.now();
+  if (now - fpsSince >= 500) {
+    fpsEl.textContent = Math.round(fpsFrames * 1000 / (now - fpsSince)) + ' fps';
+    fpsFrames = 0; fpsSince = now;
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
