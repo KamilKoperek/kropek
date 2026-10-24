@@ -26,7 +26,7 @@ const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d');
 // Render resolution relative to CSS pixels. The blur hides the low resolution,
 // and it cuts the pixels to fill and blur by ~10x (more on high-DPI screens).
-const RES = 1; // full resolution (the kiosk screen is only 1024x768, so this stays cheap)
+const RES = 0.25; // quarter resolution: on the kiosk ~22 fps vs ~10 fps at 1 (canvas blur dominates draw time)
 const BLUR = 6 * RES; // 6 CSS px of blur, in buffer pixels
 
 const COUNT = 420;          // number of unit points (total mass)
@@ -48,6 +48,37 @@ resize();
 
 let tick = 0;
 const rand = (a, b) => a + Math.random() * (b - a);
+const clamp01 = v => Math.min(Math.max(v, 0), 1);
+
+// Mood from the microphone (vad.php, fed by the kiosk-vad service): loud sound that is not speech
+// makes it nervous, a voice calms it. Both 0..1, smoothed in step(); without mic data both stay 0
+// and the creature behaves as it always did.
+const mood = { nerve: 0, calm: 0, wantNerve: 0, wantCalm: 0 };
+let vadSeq = 0;
+async function pollMood() {
+  try {
+    const d = await (await fetch('vad.php', { cache: 'no-store' })).json();
+    const fresh = d.frames.slice(d.frames.length - Math.min(Math.max(d.seq - vadSeq, 0), d.frames.length));
+    vadSeq = d.seq;
+    if (d.age === null || d.age > 2) mood.wantNerve = mood.wantCalm = 0;
+    else if (fresh.length) {
+      let vad = 0, db = -90;
+      for (const [v, , l] of fresh) { vad += v; db = Math.max(db, l); } // peak level catches bangs
+      vad /= fresh.length;
+      mood.wantCalm = clamp01((vad - 0.4) / 0.5);                   // VAD 0.4..0.9 -> 0..1
+      mood.wantNerve = clamp01((db + 50) / 25) * (1 - mood.wantCalm); // -50 dB (quiet room) .. -25 dB
+    }
+  } catch (e) {
+    mood.wantNerve = mood.wantCalm = 0;
+  }
+  setTimeout(pollMood, 100);
+}
+pollMood();
+function updateMood() {
+  // startle fast, settle slowly; calm builds gently and lingers after the voice stops
+  mood.nerve += (mood.wantNerve - mood.nerve) * (mood.wantNerve > mood.nerve ? 0.3 : 0.015);
+  mood.calm += (mood.wantCalm - mood.calm) * (mood.wantCalm > mood.calm ? 0.04 : 0.006);
+}
 
 // The creature's "will": it wanders with smooth random turns, crawling,
 // pausing and occasionally lunging, and turns back before leaving the screen.
@@ -101,7 +132,8 @@ function wander() {
   }
   if (brain.mode === 'leap') return leap();
 
-  brain.turn = (brain.turn + rand(-0.012, 0.012)) * 0.97;
+  brain.turn = (brain.turn + rand(-0.012, 0.012) * (1 + mood.nerve * 5)) * 0.97;
+  if (Math.random() < mood.nerve * 0.03) { brain.angle += rand(-2, 2); brain.speed += rand(2, 5) * mood.nerve; } // dart
   const margin = Math.min(W, H) * 0.2;
   if (brain.x < margin || brain.x > W - margin || brain.y < margin || brain.y > H - margin) {
     const home = Math.atan2(H / 2 - brain.y, W / 2 - brain.x);
@@ -111,9 +143,10 @@ function wander() {
   brain.angle += brain.turn;
   if (--brain.timer <= 0) {
     const r = Math.random();
-    if (r < 0.45 && startCrouch()) return;
-    brain.want = r < 0.6 ? 0 : r < 0.75 ? rand(5, 8) : rand(1, 3); // rest / lunge / crawl
-    brain.timer = rand(40, 140);
+    if (r < 0.45 * (1 - mood.calm * 0.8) && startCrouch()) return;
+    brain.want = r < 0.6 - mood.nerve * 0.4 ? 0 : r < 0.75 ? rand(5, 8) : rand(1, 3); // rest / lunge / crawl
+    brain.want *= 1 - mood.calm * 0.7;
+    brain.timer = rand(40, 140) * (1 - mood.nerve * 0.7) * (1 + mood.calm);
   }
   brain.speed += (brain.want - brain.speed) * 0.03;
   brain.x = Math.min(Math.max(brain.x + Math.cos(brain.angle) * brain.speed, 0), W);
@@ -135,7 +168,7 @@ function updateBody() {
   const calm = brain.mode === 'crawl' ? 1 - Math.min(s / 4, 0.7) : 0.2;
   for (const l of lobes) {
     if (Math.random() < 0.01) l.want = rand(0, 0.35 / l.k);
-    l.amp += (l.want * calm - l.amp) * 0.02;
+    l.amp += (l.want * calm * (1 + mood.nerve * 1.5) * (1 - mood.calm * 0.7) - l.amp) * 0.02;
     l.ph += l.spd;
   }
   if (--bulge.timer <= 0) {
@@ -157,7 +190,10 @@ function bodyPoint(u) {
   for (const l of lobes) shape += l.amp * Math.sin(l.k * a + l.ph);
   const da = Math.atan2(Math.sin(a - bulge.angle), Math.cos(a - bulge.angle));
   shape += bulge.amp * Math.exp(-da * da / 0.5);
-  const r = BODY_R * u.r * shape * (1 + 0.08 * Math.sin(tick * 0.05 + u.ph)) * (1 - body.squash);
+  const r = BODY_R * u.r * shape * (1 - body.squash)
+    * (1 + 0.08 * Math.sin(tick * 0.05 + u.ph)
+         + mood.nerve * 0.07 * Math.sin(tick * 0.9 + u.ph * 3)  // shiver
+         + mood.calm * 0.07 * Math.sin(tick * 0.03));            // slow breath
   const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
   // Scale along the travel direction, thin across it (roughly area-preserving).
   const st = 1 + body.stretch;
@@ -183,6 +219,7 @@ const tendrils = Array.from({ length: TENDRILS }, () => { const td = {}; resetTe
 function updateTendrils() {
   for (const td of tendrils) {
     td.angle += Math.sin(tick * 0.015 + td.ph) * 0.008;
+    if (td.state === 'wait' && Math.random() < mood.nerve * 0.015) { td.max = rand(40, 110); td.state = 'grow'; }
     if (td.state === 'grow') {
       td.len += (td.max - td.len) * 0.25;
       if (td.len > td.max * 0.95) { td.state = 'hold'; td.timer = rand(8, 30); }
@@ -195,7 +232,7 @@ function updateTendrils() {
 }
 function tendrilPoint(td, f) {
   const base = brain;
-  const a = td.angle + td.curl * f * f + Math.sin(tick * 0.09 + td.ph + f * 5) * 0.4 * f;
+  const a = td.angle + td.curl * f * f + Math.sin(tick * 0.09 + td.ph + f * 5) * 0.4 * f * (1 + mood.nerve * 1.5);
   return { x: base.x + Math.cos(a) * td.len * f, y: base.y + Math.sin(a) * td.len * f };
 }
 
@@ -286,6 +323,7 @@ function mergeClose() {
 
 function step() {
   tick++;
+  updateMood();
   const px = brain.x, py = brain.y;
   wander();
   brain.vx = brain.x - px; brain.vy = brain.y - py;
@@ -299,8 +337,9 @@ function step() {
     // Soft spring toward its target: small bits are quick and whippy,
     // the big body is heavier and lags.
     const k = (brain.mode === 'leap' ? 0.045 : 0.02) / Math.pow(p.m, 0.2);
-    p.vx += dx * k + (dx / d) * 0.1 + rand(-0.08, 0.08);
-    p.vy += dy * k + (dy / d) * 0.1 + rand(-0.08, 0.08);
+    const jit = 0.08 * (1 + mood.nerve * 6) * (1 - mood.calm * 0.5);
+    p.vx += dx * k + (dx / d) * 0.1 + rand(-jit, jit);
+    p.vy += dy * k + (dy / d) * 0.1 + rand(-jit, jit);
     p.vx *= 0.88; p.vy *= 0.88;
     const s = Math.hypot(p.vx, p.vy);
     if (s > MAX_SPEED) { p.vx *= MAX_SPEED / s; p.vy *= MAX_SPEED / s; }
@@ -322,7 +361,8 @@ function blobPath(p, r, t, beat) {
   const speed = Math.hypot(mvx, mvy);
   const dir = Math.atan2(mvy, mvx);
   const stretch = Math.min(speed * 0.14, 1.4);   // droplet elongation along travel
-  const amp = Math.min(0.06 + p.m * 0.004, 0.26); // heavier blobs wobble more
+  const amp = Math.min(0.06 + p.m * 0.004, 0.26) // heavier blobs wobble more
+    * (1 + mood.nerve * 0.8) * (1 - mood.calm * 0.4);
   const n = Math.min(24 + Math.round(r * 2), 128); // vertices per blob outline: more = smoother edges
   for (let i = 0; i <= n; i++) {
     const a = (i / n) * Math.PI * 2;
@@ -342,10 +382,14 @@ function blobPath(p, r, t, beat) {
   bctx.closePath();
 }
 
+let beatPh = 0, lastDraw = performance.now();
 function draw() {
-  const t = performance.now() / 1000;
-  // Heartbeat: a sharp double-thump every ~1.2 s, stronger in bigger masses.
-  const beat = Math.pow(Math.max(Math.sin(t * 5.2), 0), 8) + 0.6 * Math.pow(Math.max(Math.sin(t * 5.2 - 0.9), 0), 8);
+  const now = performance.now(), t = now / 1000;
+  // Heartbeat: a sharp double-thump every ~1.2 s, stronger in bigger masses; races when nervous,
+  // slows when calm (accumulated phase, so rate changes don't jump).
+  beatPh += (now - lastDraw) / 1000 * 5.2 * (1 + mood.nerve * 1.2 - mood.calm * 0.35);
+  lastDraw = now;
+  const beat = Math.pow(Math.max(Math.sin(beatPh), 0), 8) + 0.6 * Math.pow(Math.max(Math.sin(beatPh - 0.9), 0), 8);
   bctx.clearRect(0, 0, W, H);
   bctx.fillStyle = '#000';
   bctx.beginPath();
@@ -368,7 +412,8 @@ function loop() {
   fpsFrames++;
   const now = performance.now();
   if (now - fpsSince >= 500) {
-    fpsEl.textContent = Math.round(fpsFrames * 1000 / (now - fpsSince)) + ' fps';
+    fpsEl.textContent = Math.round(fpsFrames * 1000 / (now - fpsSince)) + ' fps'
+      + `  nerve ${mood.nerve.toFixed(2)}  calm ${mood.calm.toFixed(2)}`;
     fpsFrames = 0; fpsSince = now;
   }
   requestAnimationFrame(loop);

@@ -3,7 +3,7 @@
 ```
 mic jack ─ arecord (48 kHz mono S16) ─ ~/vad (RNNoise, 10 ms frames) ─ /dev/shm/kropek-vad.json
                                                                            │ rewritten every 50 ms
-                         voice.html ── polls every 100 ms ── vad.php ──────┘
+                         voice.html ── polls every 50 ms ─── vad.php ──────┘
 ```
 
 ## On the box (not in git)
@@ -22,9 +22,17 @@ Build: `gcc -O2 -Wall vad.c -o vad -lrnnoise -lm` (rnnoise is in `/usr/local`), 
 - `vad.php` — returns the JSON plus `age` (seconds since last write, 1 s resolution); empty frames if the service is down.
 - `voice.html` — state (SPEECH/silence), VAD / speech % / level meters, 10 s chart, list of speech segments.
   Segments use hysteresis: start at VAD ≥ 0.6, end after 300 ms below 0.3.
+  Rendering: polled frames go into a queue and are fed at their real 10 ms rate on every
+  `requestAnimationFrame` (smooth scrolling, ~100 ms behind live; if >250 ms queues up it skips ahead).
+  The chart canvas is drawn at half resolution (`SCALE`) with one point per pixel column (max of its frames)
+  and upscaled by CSS; DOM text/bars are touched only when their value changes.
 
 Polling rather than a held-open stream (SSE) on purpose: `php -S` has 3 workers and every open stream would
 hold one forever, starving the kiosk.
+
+## Consumers
+
+- `voice.html` (meters, chart, segments) and `kropek.html` (creature mood, see [page.md](page.md)).
 
 ## Notes
 
