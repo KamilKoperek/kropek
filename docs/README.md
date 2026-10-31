@@ -9,6 +9,7 @@ served by a local PHP server from `~/php` (port 80, `http://192.168.1.6/`), usin
 | [kiosk.md](kiosk.md) | How cog-in-cage starts, files involved, day-to-day operations |
 | [deploy.md](deploy.md) | Deploying from GitHub (`./deploy.sh` or the button on `/deploy.php`) |
 | [voice.md](voice.md) | Live mic voice activity: `~/vad` service → `vad.php` → `voice.html` |
+| [hotspot.md](hotspot.md) | USB Wi-Fi access point `kropek` → `http://10.42.0.1/` |
 | [page.md](page.md) | The displayed page (`kropek.html`) and performance notes |
 
 Quick start:

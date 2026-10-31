@@ -13,7 +13,7 @@
   /* Separate element so the canvas's contrast filter doesn't apply to it. */
   #fps { position: fixed; top: 8px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
          font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; pointer-events: none; }
-  /* Test control: overrides the microphone's speech % (also ?speech=NN in the URL). */
+  /* Test controls: override the microphone's speech and loudness (also ?speech=1&loud=0.7 in the URL). */
   #test { position: fixed; top: 34px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
           font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; display: flex; gap: 6px; align-items: center; }
 </style>
@@ -22,9 +22,10 @@
 <canvas id="c"></canvas>
 <div id="fps">-- fps</div>
 <div id="test">
-  <label><input type="checkbox" id="testOn"> test speech</label>
-  <input type="range" id="testSpeech" min="0" max="100" value="0" aria-label="Test speech %">
-  <output id="testVal">0%</output>
+  <label><input type="checkbox" id="testOn"> test</label>
+  <label><input type="checkbox" id="testSpeech"> speech</label>
+  <label>loudness <input type="range" id="testLoud" min="0" max="1" step="0.01" value="0"></label>
+  <output id="testLoudVal">0.00</output>
 </div>
 <script>
 const canvas = document.getElementById('c');
@@ -58,34 +59,52 @@ let tick = 0;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => Math.min(Math.max(v, 0), 1);
 
-// Mood from the microphone (vad.php, fed by the kiosk-vad service): speech over 40 % calms it,
-// anything under makes it nervous. Both 0..1, smoothed in step(); without mic data both stay 0
-// and the creature behaves as it always did.
+// Mood from the microphone (vad.php, fed by the kiosk-vad service): speech over 40 % calms it;
+// under that, loud sound makes it nervous and quiet leaves it neutral. Both 0..1, smoothed in
+// step(); without mic data both stay 0 and the creature behaves as it always did.
 const mood = { nerve: 0, calm: 0, wantNerve: 0, wantCalm: 0 };
-function setSpeech(speech) {
-  mood.wantCalm = speech >= 40 ? 1 : 0;                             // over 40 % speech: calm, under: nervous
-  mood.wantNerve = 1 - mood.wantCalm;
+// speech: true/false; loud: 0..1. Calm holds for CALM_HOLD_MS after speech stops.
+const CALM_HOLD_MS = 1000;
+let calmUntil = 0;
+function setInput(speech, loud) {
+  const now = performance.now();
+  if (speech) calmUntil = now + CALM_HOLD_MS;
+  const calm = now < calmUntil;
+  mood.wantCalm = calm ? 1 : 0;
+  mood.wantNerve = calm ? 0 : loud;
 }
-// Test override: checkbox + slider replace the mic's speech %.
-const testOn = document.getElementById('testOn'), testSpeech = document.getElementById('testSpeech');
-const showTest = () => { document.getElementById('testVal').textContent = testSpeech.value + '%'; };
-testSpeech.addEventListener('input', () => { testOn.checked = true; showTest(); });
-const speechParam = new URLSearchParams(location.search).get('speech');
-if (speechParam !== null) { testOn.checked = true; testSpeech.value = speechParam; }
+// Mic -> input. Calibration comes from config.php (tuned on that page, re-read every 2 s):
+// speech threshold and the dB range mapped to loudness 0..1. Defaults match config.php's.
+const cfg = { speechMin: 40, dbQuiet: -45, dbLoud: -30 };
+const dbToLoud = db => clamp01((db - cfg.dbQuiet) / (cfg.dbLoud - cfg.dbQuiet));
+async function pollConfig() {
+  try { Object.assign(cfg, await (await fetch('config.php?json', { cache: 'no-store' })).json()); } catch (e) {}
+  setTimeout(pollConfig, 2000);
+}
+pollConfig();
+
+// Test override: checkbox + controls replace the mic's speech and loudness.
+const testOn = document.getElementById('testOn');
+const testSpeech = document.getElementById('testSpeech'), testLoud = document.getElementById('testLoud');
+const showTest = () => { document.getElementById('testLoudVal').textContent = (+testLoud.value).toFixed(2); };
+for (const el of [testSpeech, testLoud]) el.addEventListener('input', () => { testOn.checked = true; showTest(); });
+const params = new URLSearchParams(location.search);
+if (params.has('speech')) { testOn.checked = true; testSpeech.checked = params.get('speech') === '1'; }
+if (params.has('loud')) { testOn.checked = true; testLoud.value = params.get('loud'); }
 showTest();
 
 let vadSeq = 0;
 async function pollMood() {
-  if (testOn.checked) { setSpeech(+testSpeech.value); setTimeout(pollMood, 100); return; }
+  if (testOn.checked) { setInput(testSpeech.checked, +testLoud.value); setTimeout(pollMood, 100); return; }
   try {
     const d = await (await fetch('vad.php', { cache: 'no-store' })).json();
     const fresh = d.frames.slice(d.frames.length - Math.min(Math.max(d.seq - vadSeq, 0), d.frames.length));
     vadSeq = d.seq;
     if (d.age === null || d.age > 2) mood.wantNerve = mood.wantCalm = 0;
     else if (fresh.length) {
-      let speech = 0;
-      for (const [, sp] of fresh) speech += sp;
-      setSpeech(speech / fresh.length);                             // speech % of the last ~100 ms
+      let speech = 0, db = -90;
+      for (const [, sp, l] of fresh) { speech += sp; db = Math.max(db, l); } // peak level catches bangs
+      setInput(speech / fresh.length >= cfg.speechMin, dbToLoud(db));  // the last ~100 ms
     }
   } catch (e) {
     mood.wantNerve = mood.wantCalm = 0;
@@ -97,9 +116,10 @@ let startleAt = 0;
 function updateMood() {
   // a sudden jump in noise makes it bolt (at most every ~3 s)
   if (mood.wantNerve - mood.nerve > 0.35 && tick > startleAt) { startleAt = tick + 60; startle(); }
-  // startle fast, settle slowly; calm builds gently and lingers after the voice stops
+  if (mood.wantCalm) { mood.calm = 1; mood.nerve = 0; return; }  // speech (or its 1 s hold): calm at once
+  mood.calm *= 0.9;                                               // hold over: calm fades in ~0.5 s
+  // startle fast, settle slowly
   mood.nerve += (mood.wantNerve - mood.nerve) * (mood.wantNerve > mood.nerve ? 0.3 : 0.015);
-  mood.calm += (mood.wantCalm - mood.calm) * (mood.wantCalm > mood.calm ? 0.04 : 0.006);
 }
 
 // The creature's "will": it wanders with smooth random turns, crawling,
