@@ -7,7 +7,7 @@ const LIMITS = [                       // key => [min, max, default]
     'dbQuiet'   => [-90, 0, -45],      // peak level (dBFS) at or below which it stays unbothered
     'dbLoud'    => [-90, 0, -30],      // peak level at which it is fully nervous
 ];
-$file = (getenv('HOME') ?: '/home/kropek') . '/kropek-config.json';
+$file = dirname(__DIR__) . '/kropek-config.json';
 
 function load(string $file): array {
     $saved = json_decode((string) @file_get_contents($file), true);
@@ -46,41 +46,44 @@ $cfg = load($file);
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kropek – ustawienia</title>
-<style>
-  body { font: 16px system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-  label { display: block; margin: 1.2rem 0 .3rem; font-weight: 600; }
-  .row { display: flex; gap: .8rem; align-items: center; }
-  input[type=range] { flex: 1; }
-  output { min-width: 5rem; text-align: right; font-variant-numeric: tabular-nums; }
-  small { color: #555; }
-  button { font: inherit; padding: .5rem 1.2rem; cursor: pointer; margin-right: .5rem; }
-  #meter { position: relative; height: 1.6rem; background: #eee; border: 1px solid #999; margin: .4rem 0; }
-  #bar { position: absolute; inset: 0 auto 0 0; width: 0; background: #888; }
-  #bar.loud { background: #c33; } #bar.speech { background: #3a3; }
-  .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #000; }
-  #live { font-variant-numeric: tabular-nums; }
-</style>
-<h1>Czułość mikrofonu</h1>
-<p><small>Kiosk stosuje zmiany w ciągu ~2 s od zapisu. Miernik pokazuje bieżący sygnał z mikrofonu na tle aktualnych (niezapisanych) ustawień.</small></p>
+<link rel="stylesheet" href="ui.css">
+<header class="topbar"><nav>
+  <a class="brand" href="index.html">Kropek</a>
+  <a href="voice.html">Głos</a><a href="config.php" aria-current="page">Ustawienia</a><a href="deploy.php">Wdrożenie</a><a class="nuke-link" href="nuke.php">Nuke</a>
+</nav></header>
+<main>
+  <h1>Czułość mikrofonu</h1>
+  <p class="lead">Kiosk stosuje zmiany w ciągu ~2 s od zapisu. Miernik pokazuje bieżący sygnał z mikrofonu na tle aktualnych (niezapisanych) ustawień.</p>
 
-<div id="meter" aria-hidden="true"><div id="bar"></div><div class="mark" id="mQuiet"></div><div class="mark" id="mLoud"></div></div>
-<div id="live">czekam na mikrofon…</div>
+  <div class="card live-card">
+    <div class="meter-track" aria-hidden="true"><div class="meter-fill" id="bar"></div><div class="meter-mark left" id="mQuiet" data-label="cisza"></div><div class="meter-mark" id="mLoud" data-label="głośno"></div></div>
+    <div class="readout" id="live">czekam na mikrofon…</div>
+  </div>
 
-<form id="f">
-  <label for="dbQuiet">Poziom ciszy — ignoruj hałas poniżej</label>
-  <div class="row"><input type="range" id="dbQuiet" min="-90" max="0" step="1"><output for="dbQuiet"></output></div>
-  <small>Podnieś, jeśli szum w pomieszczeniu go denerwuje.</small>
+  <form id="f" class="card">
+    <div class="field">
+      <div class="field-head"><label for="dbQuiet">Poziom ciszy — ignoruj hałas poniżej</label><output for="dbQuiet"></output></div>
+      <div class="slider"><button type="button" class="step" data-for="dbQuiet" data-dir="-1" aria-label="Mniej">−</button><input type="range" id="dbQuiet" min="-90" max="0" step="1"><button type="button" class="step" data-for="dbQuiet" data-dir="1" aria-label="Więcej">+</button></div>
+      <small>Podnieś, jeśli szum w pomieszczeniu go denerwuje.</small>
+    </div>
+    <div class="field">
+      <div class="field-head"><label for="dbLoud">Poziom głośny — pełne zdenerwowanie od</label><output for="dbLoud"></output></div>
+      <div class="slider"><button type="button" class="step" data-for="dbLoud" data-dir="-1" aria-label="Mniej">−</button><input type="range" id="dbLoud" min="-90" max="0" step="1"><button type="button" class="step" data-for="dbLoud" data-dir="1" aria-label="Więcej">+</button></div>
+      <small>Obniż, żeby bardziej reagował na umiarkowany hałas. Musi być wyżej niż poziom ciszy.</small>
+    </div>
+    <div class="field">
+      <div class="field-head"><label for="speechMin">Próg mowy</label><output for="speechMin"></output></div>
+      <div class="slider"><button type="button" class="step" data-for="speechMin" data-dir="-1" aria-label="Mniej">−</button><input type="range" id="speechMin" min="0" max="100" step="1"><button type="button" class="step" data-for="speechMin" data-dir="1" aria-label="Więcej">+</button></div>
+      <small>Procent mowy potrzebny, żeby go uspokoić. Podnieś, jeśli hałas jest brany za głos.</small>
+    </div>
+    <div class="save-bar actions">
+      <button type="submit" class="btn-primary">Zapisz</button><button type="button" id="defaults">Domyślne</button>
+      <span id="status" class="status" aria-live="polite"></span>
+    </div>
+  </form>
 
-  <label for="dbLoud">Poziom głośny — pełne zdenerwowanie od</label>
-  <div class="row"><input type="range" id="dbLoud" min="-90" max="0" step="1"><output for="dbLoud"></output></div>
-  <small>Obniż, żeby bardziej reagował na umiarkowany hałas. Musi być wyżej niż poziom ciszy.</small>
-
-  <label for="speechMin">Próg mowy</label>
-  <div class="row"><input type="range" id="speechMin" min="0" max="100" step="1"><output for="speechMin"></output></div>
-  <small>Procent mowy potrzebny, żeby go uspokoić. Podnieś, jeśli hałas jest brany za głos.</small>
-
-  <p><button type="submit">Zapisz</button><button type="button" id="defaults">Domyślne</button> <span id="status" aria-live="polite"></span></p>
-</form>
+  <p><a class="btn btn-danger btn-lg btn-block" href="nuke.php">☢ Nuke protocol</a></p>
+</main>
 <script>
 const saved = <?= json_encode($cfg) ?>;
 const defaults = <?= json_encode(array_map(fn($l) => $l[2], LIMITS)) ?>;
@@ -89,26 +92,33 @@ const unit = { dbQuiet: ' dB', dbLoud: ' dB', speechMin: ' %' };
 const pos = db => Math.min(Math.max((db + 90) / 90, 0), 1) * 100 + '%'; // meter: -90..0 dB
 
 function show() {
-  for (const k of keys) el(k).nextElementSibling.textContent = el(k).value + unit[k];
+  for (const k of keys) document.querySelector(`output[for=${k}]`).textContent = el(k).value + unit[k];
   el('mQuiet').style.left = pos(+el('dbQuiet').value);
   el('mLoud').style.left = pos(+el('dbLoud').value);
 }
+function say(text, cls = '') { el('status').textContent = text; el('status').className = 'status ' + cls; }
 function fill(cfg) { for (const k of keys) el(k).value = cfg[k]; show(); }
-for (const k of keys) el(k).addEventListener('input', () => { el('status').textContent = 'niezapisane'; show(); });
-el('defaults').addEventListener('click', () => { fill(defaults); el('status').textContent = 'niezapisane'; });
+for (const k of keys) el(k).addEventListener('input', () => { say('niezapisane'); show(); });
+// −/+ buttons: 1 dB / 1 % steps, finer than dragging on a phone.
+for (const b of document.querySelectorAll('.step')) b.addEventListener('click', () => {
+  const r = el(b.dataset.for);
+  b.dataset.dir > 0 ? r.stepUp() : r.stepDown();
+  r.dispatchEvent(new Event('input'));
+});
+el('defaults').addEventListener('click', () => { fill(defaults); say('niezapisane'); });
 fill(saved);
 
 el('f').addEventListener('submit', async e => {
   e.preventDefault();
-  if (+el('dbLoud').value <= +el('dbQuiet').value) { el('status').textContent = 'Poziom głośny musi być wyżej niż poziom ciszy'; return; }
+  if (+el('dbLoud').value <= +el('dbQuiet').value) { say('Poziom głośny musi być wyżej niż poziom ciszy', 'bad'); return; }
   const body = Object.fromEntries(keys.map(k => [k, +el(k).value]));
   try {
     const res = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
     fill(data);
-    el('status').textContent = 'Zapisano';
-  } catch (err) { el('status').textContent = 'Błąd zapisu: ' + err.message; }
+    say('Zapisano', 'ok');
+  } catch (err) { say('Błąd zapisu: ' + err.message, 'bad'); }
 });
 
 // Live mic, evaluated the same way kropek.html does (peak level and speech % of new frames).
@@ -126,7 +136,7 @@ async function poll() {
       const q = +el('dbQuiet').value, L = +el('dbLoud').value;
       const loud = Math.min(Math.max((db - q) / (L - q), 0), 1), speech = sp >= +el('speechMin').value;
       el('bar').style.width = pos(db);
-      el('bar').className = speech ? 'speech' : loud > 0 ? 'loud' : '';
+      el('bar').className = 'meter-fill' + (speech ? ' speech' : loud > 0 ? ' loud' : '');
       el('live').textContent = `szczyt ${db.toFixed(1)} dB · mowa ${sp.toFixed(0)} % → `
         + (speech ? 'mowa (spokój)' : `głośność ${loud.toFixed(2)}`);
     }

@@ -1,44 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html lang="pl">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kropek voice</title>
+<title>Kropek – głos</title>
 <style>
-  :root { --bg: #fff; --fg: #111; --muted: #777; --panel: #f2f2f2; --speech: #1a9e4b; --vad: #2563eb; --level: #d97706; }
-  body { font: 16px system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
-  h1 { margin: 0 0 1rem; font-size: 1.6rem; }
   .top { display: flex; gap: 1rem; flex-wrap: wrap; align-items: stretch; }
-  .state { flex: 1 1 14rem; padding: 1rem; border-radius: .5rem; background: var(--panel); font-size: 2rem; font-weight: 700; text-align: center; }
-  .state.on { background: var(--speech); color: #fff; }
-  .state small { display: block; font-size: .9rem; font-weight: 400; }
-  .meters { flex: 2 1 22rem; display: grid; gap: .6rem; }
-  .meter { display: grid; grid-template-columns: 6rem 1fr 4.5rem; align-items: center; gap: .5rem; }
-  .bar { height: 1.1rem; background: var(--panel); border-radius: .3rem; overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  canvas { display: block; width: 100%; height: 200px; margin-top: 1rem; background: var(--panel); border-radius: .5rem; }
-  .legend { color: var(--muted); font-size: .85rem; margin: .3rem 0 1rem; }
-  .legend b { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; vertical-align: -1px; margin: 0 .2rem 0 .8rem; }
-  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  td, th { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid var(--panel); }
-  .status { color: var(--muted); font-size: .9rem; }
-  .status.bad { color: #c00; }
+  .state { flex: 1 1 14rem; display: flex; flex-direction: column; justify-content: center; font-size: 2.2rem; font-weight: 800; text-align: center; letter-spacing: .04em; transition: background .15s, color .15s; }
+  .state.on { background: var(--speech); color: #052e1c; border-color: transparent; box-shadow: 0 0 40px rgba(52, 211, 153, .35); }
+  .state small { display: block; font-size: .9rem; font-weight: 500; color: inherit; opacity: .8; font-family: var(--mono); }
+  .meters { flex: 2 1 22rem; display: grid; gap: .8rem; align-content: center; }
+  .meter { display: grid; grid-template-columns: 4.5rem 1fr 4.5rem; align-items: center; gap: .7rem; }
+  .meter > span:first-child { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; }
+  .bar { height: .9rem; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; }
+  .num { text-align: right; font-family: var(--mono); }
+  canvas { display: block; width: 100%; height: 200px; background: var(--surface-2); border-radius: 10px; }
+  .legend { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+  .legend b { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; vertical-align: -1px; margin: 0 .3rem 0 .9rem; }
+  table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: .9rem; }
+  td, th { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font: 600 .75rem system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
 </style>
-<h1>Voice activity</h1>
-<p class="status" id="status">connecting…</p>
+<link rel="stylesheet" href="ui.css">
+<header class="topbar"><nav>
+  <a class="brand" href="index.html">Kropek</a>
+  <a href="voice.html" aria-current="page">Głos</a><a href="config.php">Ustawienia</a><a href="deploy.php">Wdrożenie</a><a class="nuke-link" href="nuke.php">Nuke</a>
+</nav></header>
+<main>
+<h1>Aktywność głosu</h1>
+<p class="status" id="status">łączenie…</p>
 <div class="top">
-  <div class="state" id="state">silence<small id="stateSub">&nbsp;</small></div>
-  <div class="meters">
+  <div class="state card" id="state">cisza<small id="stateSub">&nbsp;</small></div>
+  <div class="meters card">
     <div class="meter"><span>VAD</span><div class="bar"><i id="vadBar" style="background:var(--vad)"></i></div><span class="num" id="vadNum">–</span></div>
-    <div class="meter"><span>Speech</span><div class="bar"><i id="spBar" style="background:var(--speech)"></i></div><span class="num" id="spNum">–</span></div>
-    <div class="meter"><span>Level</span><div class="bar"><i id="lvBar" style="background:var(--level)"></i></div><span class="num" id="lvNum">–</span></div>
+    <div class="meter"><span>Mowa</span><div class="bar"><i id="spBar" style="background:var(--speech)"></i></div><span class="num" id="spNum">–</span></div>
+    <div class="meter"><span>Poziom</span><div class="bar"><i id="lvBar" style="background:var(--level)"></i></div><span class="num" id="lvNum">–</span></div>
   </div>
 </div>
-<canvas id="chart" aria-label="Last 10 seconds of VAD probability and input level"></canvas>
-<div class="legend">last 10 s <b style="background:var(--vad)"></b>VAD <b style="background:var(--level)"></b>level (−90…0 dB) <b style="background:var(--speech);opacity:.25"></b>speech segment</div>
-<h2>Speech segments</h2>
-<table><thead><tr><th>Start</th><th>Duration</th><th>Peak VAD</th></tr></thead><tbody id="log"></tbody></table>
-<p><a href="index.html">← back</a></p>
+<div class="card" style="margin-top:1rem">
+  <canvas id="chart" aria-label="Ostatnie 10 sekund: prawdopodobieństwo VAD i poziom sygnału"></canvas>
+  <div class="legend">ostatnie 10 s <b style="background:var(--vad)"></b>VAD <b style="background:var(--level)"></b>poziom (−90…0 dB) <b style="background:var(--speech);opacity:.25"></b>fragment mowy</div>
+</div>
+<h2>Fragmenty mowy</h2>
+<div class="card"><table><thead><tr><th>Początek</th><th>Czas trwania</th><th>Szczyt VAD</th></tr></thead><tbody id="log"></tbody></table></div>
+</main>
 <script>
 const POLL_MS = 50, FRAME_MS = 10, HISTORY = 1000;            // 1000 frames = 10 s
 const ON = 0.6, OFF = 0.3, HANG = 30;                         // hysteresis; 30 frames = 300 ms hangover
@@ -79,8 +84,8 @@ function render() {
     setWidth('spBar', f.sp); setText('spNum', f.sp.toFixed(0) + '%');
     setWidth('lvBar', (f.db + 90) / 90 * 100); setText('lvNum', f.db.toFixed(0) + ' dB');
   }
-  const st = $('state'), cls = 'state' + (speaking ? ' on' : '');
-  if (st.className !== cls) { st.className = cls; st.firstChild.textContent = speaking ? 'SPEECH' : 'silence'; }
+  const st = $('state'), cls = 'state card' + (speaking ? ' on' : '');
+  if (st.className !== cls) { st.className = cls; st.firstChild.textContent = speaking ? 'MOWA' : 'cisza'; }
   setText('stateSub', speaking ? (seg.frames * FRAME_MS / 1000).toFixed(1) + ' s' : ' ');
   drawChart();
 }
@@ -128,16 +133,16 @@ async function poll() {
   try {
     const d = await (await fetch('vad.php', { cache: 'no-store' })).json();
     if (d.age === null || d.age > 2) {
-      setText('status', 'no data from the microphone service (kiosk-vad)'); $('status').className = 'status bad';
+      setText('status', 'brak danych z usługi mikrofonu (kiosk-vad)'); $('status').className = 'status bad';
     } else {
-      setText('status', 'live'); $('status').className = 'status';
+      setText('status', 'na żywo'); $('status').className = 'status ok';
       if (d.seq < lastSeq) lastSeq = 0;                       // service restarted
       const fresh = Math.min(d.seq - lastSeq, d.frames.length);
       queue.push(...d.frames.slice(d.frames.length - fresh));
       lastSeq = d.seq;
     }
   } catch (e) {
-    setText('status', 'server unreachable'); $('status').className = 'status bad';
+    setText('status', 'serwer nieosiągalny'); $('status').className = 'status bad';
   }
   setTimeout(poll, POLL_MS);
 }

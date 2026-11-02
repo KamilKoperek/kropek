@@ -1,7 +1,7 @@
-# Displayed page: "Symbiote"
+# Displayed page: "Kropek"
 
 `/home/kropek/kropek.html` (~380 lines, single self-contained HTML file, no external assets):
-a full-screen `<canvas>` animation of a black liquid "symbiote" blob on a white background.
+a full-screen `<canvas>` animation of a black liquid "kropek" blob on a white background.
 
 ## Behaviour (from function names)
 

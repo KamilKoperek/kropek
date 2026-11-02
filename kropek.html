@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="pl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Symbiote</title>
+<title>Kropek</title>
 <style>
   html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
   /* The canvas is drawn small and blurred (see draw()); the browser upscales it smoothly and
@@ -11,20 +11,23 @@
      Contrast is a cheap per-pixel op, unlike a full-screen CSS blur. */
   canvas { display: block; width: 100%; height: 100%; cursor: crosshair; filter: contrast(40); }
   /* Separate element so the canvas's contrast filter doesn't apply to it. */
-  #fps { position: fixed; top: 8px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
-         font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; pointer-events: none; }
+  #fps { position: fixed; top: 8px; left: 8px; padding: 3px 8px; background: #111; color: #b6f24a;
+         font: 12px ui-monospace, Menlo, monospace; border-radius: 6px; pointer-events: none; }
   /* Test controls: override the microphone's speech and loudness (also ?speech=1&loud=0.7 in the URL). */
-  #test { position: fixed; top: 34px; left: 8px; padding: 2px 6px; background: #fff; color: #000;
-          font: 12px ui-monospace, Menlo, monospace; border: 1px solid #000; display: flex; gap: 6px; align-items: center; }
+  #test { position: fixed; top: 36px; left: 8px; padding: 3px 8px; background: #111; color: #ececf1; accent-color: #b6f24a;
+          font: 12px ui-monospace, Menlo, monospace; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
+  /* NUKE PROTOCOL (nuke.php): a GIF covers everything and the Kropek loop pauses. */
+  #nuke { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 10; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<img id="nuke" alt="" hidden>
 <div id="fps">-- fps</div>
 <div id="test">
   <label><input type="checkbox" id="testOn"> test</label>
-  <label><input type="checkbox" id="testSpeech"> speech</label>
-  <label>loudness <input type="range" id="testLoud" min="0" max="1" step="0.01" value="0"></label>
+  <label><input type="checkbox" id="testSpeech"> mowa</label>
+  <label>głośność <input type="range" id="testLoud" min="0" max="1" step="0.01" value="0"></label>
   <output id="testLoudVal">0.00</output>
 </div>
 <script>
@@ -82,6 +85,23 @@ async function pollConfig() {
   setTimeout(pollConfig, 2000);
 }
 pollConfig();
+
+// NUKE PROTOCOL: nuke.php picks a GIF to show instead of Kropek; polled every 1 s.
+const nukeEl = document.getElementById('nuke');
+let nukeGif = null, paused = false;
+async function pollNuke() {
+  try {
+    const { gif } = await (await fetch('nuke.php?json', { cache: 'no-store' })).json();
+    if (gif !== nukeGif) {
+      nukeGif = gif;
+      if (gif) nukeEl.src = 'gifs/' + encodeURIComponent(gif); else nukeEl.removeAttribute('src');
+      nukeEl.hidden = !gif;
+      if (!gif && paused) { paused = false; requestAnimationFrame(loop); }
+    }
+  } catch (e) {}
+  setTimeout(pollNuke, 1000);
+}
+pollNuke();
 
 // Test override: checkbox + controls replace the mic's speech and loudness.
 const testOn = document.getElementById('testOn');
@@ -461,13 +481,14 @@ function draw() {
 const fpsEl = document.getElementById('fps');
 let fpsFrames = 0, fpsSince = performance.now();
 function loop() {
+  if (nukeGif) { paused = true; return; }  // no CPU on the animation while a GIF is shown
   step();
   draw();
   fpsFrames++;
   const now = performance.now();
   if (now - fpsSince >= 500) {
     fpsEl.textContent = Math.round(fpsFrames * 1000 / (now - fpsSince)) + ' fps'
-      + `  nerve ${mood.nerve.toFixed(2)}  calm ${mood.calm.toFixed(2)}`;
+      + `  nerwy ${mood.nerve.toFixed(2)}  spokój ${mood.calm.toFixed(2)}`;
     fpsFrames = 0; fpsSince = now;
   }
   requestAnimationFrame(loop);

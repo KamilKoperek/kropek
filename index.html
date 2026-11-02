@@ -1,17 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="pl">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kropek</title>
-<style>
-  body { font: 18px system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-  a { display: block; font-size: 1.5rem; margin: .6rem 0; }
-</style>
-<h1>Kropek</h1>
-<nav>
-  <a href="kropek.html">Kropek (Symbiote animation)</a>
-  <a href="voice.html">Voice activity (live mic)</a>
-  <a href="config.php">Mic sensitivity (config)</a>
-  <a href="deploy.php">Deploy from GitHub</a>
-</nav>
+<link rel="stylesheet" href="ui.css">
+<header class="topbar"><nav>
+  <a class="brand" href="index.html">Kropek</a>
+  <a href="voice.html">Głos</a><a href="config.php">Ustawienia</a><a href="deploy.php">Wdrożenie</a><a class="nuke-link" href="nuke.php">Nuke</a>
+</nav></header>
+<main>
+  <h1>Panel Kropka</h1>
+  <p class="lead">Kiosk z Kropkiem: co pokazuje, co słyszy i jak reaguje.</p>
+  <div class="tiles">
+    <a class="tile" href="kropek.html"><strong>Kropek</strong><span>Stworek na pełnym ekranie (to, co pokazuje kiosk)</span></a>
+    <a class="tile" href="voice.html"><strong>Aktywność głosu</strong><span>Mierniki mikrofonu na żywo, wykres i fragmenty mowy</span></a>
+    <a class="tile" href="config.php"><strong>Czułość mikrofonu</strong><span>Poziom ciszy i głośności oraz próg mowy</span></a>
+    <a class="tile" href="deploy.php"><strong>Wdrożenie</strong><span>Pobierz gałąź main z GitHuba na skrzynkę</span></a>
+    <a class="tile danger" href="nuke.php"><strong>☢ NUKE PROTOCOL</strong><span>Zamień stworka na GIF-a</span></a>
+  </div>
+</main>
 </html>
