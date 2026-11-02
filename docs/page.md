@@ -41,9 +41,18 @@ Method: a temporary copy reported timings via `fetch('/fps-beacon?...')`, read f
 
 ## Reacts to the microphone
 
-`kropek.html` polls `vad.php` every 100 ms (same data as `voice.html`, see [voice.md](voice.md)) and averages the
-**speech %** of the new frames: **≥ 40 % → calm, < 40 % → nervous** (`setSpeech()`).
-`updateMood()` smooths it per frame: nerve rises fast and settles slowly; calm builds over ~1–2 s and lingers.
+`kropek.html` polls `vad.php` every 100 ms (same data as `voice.html`, see [voice.md](voice.md)) and looks at the
+new frames (`setInput()`): average **speech % ≥ threshold → calm** (held 1 s after speech stops); otherwise the
+**peak level** is mapped to loudness 0..1 between the *quiet* and *loud* dB levels, and loudness is how nervous it gets.
+`updateMood()`: calm applies at once and fades in ~0.5 s; nerve rises fast and settles slowly.
+
+### Sensitivity (`config.php`)
+
+`http://192.168.1.6/config.php` (or `http://10.42.0.1/config.php` on the hotspot) has sliders for the
+**quiet level** (noise below it is ignored), **loud level** (fully nervous) and **speech threshold**, with a live
+mic meter that shows the peak dB and what the current slider values would make of it. **Save** writes
+`~/kropek-config.json` on the box (outside `~/php`, so deploys keep it); `kropek.html` re-reads
+`config.php?json` every 2 s, no reload needed. Defaults: −45 dB / −30 dB / 40 %. No auth, like the deploy button.
 
 | | Nervous (`mood.nerve`) | Calm (`mood.calm`) |
 |---|---|---|
