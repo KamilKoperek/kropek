@@ -96,7 +96,9 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 
 .tile strong { display: block; font-size: 1.15rem; margin-bottom: .2rem; }
 .tile span { color: var(--muted); font-size: .9rem; }
 .tile.danger:hover { border-color: var(--danger); }
-.tile.danger strong { color: var(--danger); letter-spacing: .1em; }
+.tile.danger { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tile.danger strong { color: var(--danger); letter-spacing: .1em; margin: 0; }
+.tile.danger span:empty { display: none; }
 
 /* Deploy output */
 pre.log { font: .85rem/1.5 var(--mono); background: #07070a; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1rem 0 0; white-space: pre-wrap; min-height: 4rem; color: #c9d1c1; }
