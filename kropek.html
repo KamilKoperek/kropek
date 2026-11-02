@@ -94,7 +94,7 @@ async function pollNuke() {
     const { gif } = await (await fetch('nuke.php?json', { cache: 'no-store' })).json();
     if (gif !== nukeGif) {
       nukeGif = gif;
-      if (gif) nukeEl.src = 'gifs/' + encodeURIComponent(gif); else nukeEl.removeAttribute('src');
+      if (gif) nukeEl.src = 'nuke.php?file=' + encodeURIComponent(gif); else nukeEl.removeAttribute('src');
       nukeEl.hidden = !gif;
       if (!gif && paused) { paused = false; requestAnimationFrame(loop); }
     }

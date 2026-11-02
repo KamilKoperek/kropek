@@ -101,6 +101,10 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 
 /* Deploy output */
 pre.log { font: .85rem/1.5 var(--mono); background: #07070a; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1rem 0 0; white-space: pre-wrap; min-height: 4rem; color: #c9d1c1; }
 
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* keyboard focus on the hidden file input shows on its label button */
+label.btn:has(+ input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Phones */
 @media (max-width: 600px) {
   main { padding: 1rem .9rem 2.5rem; }
