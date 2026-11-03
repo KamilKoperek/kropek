@@ -75,3 +75,11 @@ On the kiosk use the URL: `./kiosk-restart 'http://127.0.0.1/kropek.html?speech=
 Blob outlines use 10–40 vertices scaled to buffer pixels (`r * RES * 4`) instead of up to 128: the low-res
 buffer and blur hide finer detail. Measured steady state: ~37 fps nervous (~75 blobs), ~42–48 fps calm (~25 blobs).
 The next cost to cut would be `mergeClose()` (O(n²) in blobs).
+
+## Wi-Fi IP overlay (`net.php`)
+
+`kropek.html` polls `net.php` every 2 s. It returns the IPv4 of the `wl*` interface (ignoring the AP's
+`10.42.0.1`, so it's only set in hotspot client mode, see [hotspot.md](hotspot.md)) and how long that IP has
+been seen; the first-seen time is kept in `/dev/shm/kropek-net.json`. While the IP is under 30 s old the page
+shows `http://<ip>/` at the bottom, above everything including the NUKE GIF. A kiosk reload (deploy) doesn't
+re-show it; a reboot, reconnect or new IP does.

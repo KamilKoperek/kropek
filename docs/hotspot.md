@@ -24,6 +24,25 @@ su -c 'grep ^wpa_passphrase /etc/hostapd/hostapd.conf'    # show password
 systemctl status hostapd dnsmasq
 ```
 
+## Client mode: box uses the phone's hotspot for internet
+
+The same dongle can instead join a phone hotspot, so the box has internet (deploys fetch from GitHub) without
+the LAN. Same script, `MODE=client`; it installs `wpasupplicant`, stops/disables `hostapd` + `dnsmasq` and
+rewrites `/etc/network/interfaces.d/kropek-ap` (mode 600, holds the hotspot password) to `inet dhcp` with
+`wpa-ssid`/`wpa-psk`. Running the script without `MODE` switches back to the AP.
+
+```sh
+su -c 'MODE=client SSID=PhoneHotspot PASS=hotspotpassword sh /home/kropek/kiosk-ap-setup.sh'  # join phone
+su -c 'sh /home/kropek/kiosk-ap-setup.sh'                                                    # back to AP
+```
+
+- The phone hotspot must be **2.4 GHz** (RT5370 has no 5 GHz) and WPA2 (or WPA2/WPA3 mixed).
+- The box's IP is assigned by the phone and printed by the script. The kiosk also shows it on screen for
+  30 s after connecting (`net.php` + overlay in `kropek.html`, see [page.md](page.md)), and it's in the
+  phone's hotspot "connected devices" list. Open `http://<that IP>/deploy.php` from the phone.
+- The first switch needs internet for `apt-get` (do it while the LAN cable is in).
+- With the LAN also up, the wired default route has the lower metric and wins.
+
 ## Notes
 
 - No NAT/forwarding: clients reach only the box, not the LAN or internet. Phones say "no internet" — choose

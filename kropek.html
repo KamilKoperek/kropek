@@ -18,11 +18,17 @@
           font: 12px ui-monospace, Menlo, monospace; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
   /* NUKE PROTOCOL (nuke.php): a GIF covers everything and the Kropek loop pauses. */
   #nuke { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; z-index: 10; }
+  /* Box's IP on the phone hotspot (net.php), shown for 30 s after it connects. Above the NUKE GIF. */
+  #netip { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); padding: 16px 28px; z-index: 20;
+           background: #111; color: #b6f24a; font: bold 56px ui-monospace, Menlo, monospace; border-radius: 14px;
+           text-align: center; pointer-events: none; }
+  #netip small { display: block; color: #ececf1; font-size: 22px; font-weight: normal; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <img id="nuke" alt="" hidden>
+<div id="netip" hidden><small>Wi-Fi połączone</small><span></span></div>
 <div id="fps">-- fps</div>
 <div id="test">
   <label><input type="checkbox" id="testOn"> test</label>
@@ -102,6 +108,18 @@ async function pollNuke() {
   setTimeout(pollNuke, 1000);
 }
 pollNuke();
+
+// Phone hotspot: when the box gets an IP in Wi-Fi client mode, show it for 30 s (net.php tracks since when).
+const netEl = document.getElementById('netip');
+async function pollNet() {
+  try {
+    const { ip, age } = await (await fetch('net.php', { cache: 'no-store' })).json();
+    netEl.querySelector('span').textContent = 'http://' + ip + '/';
+    netEl.hidden = !ip || age >= 30;
+  } catch (e) {}
+  setTimeout(pollNet, 2000);
+}
+pollNet();
 
 // Test override: checkbox + controls replace the mic's speech and loudness.
 const testOn = document.getElementById('testOn');
