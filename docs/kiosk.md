@@ -15,9 +15,14 @@ built-in server running as a **systemd user service** (`kiosk-php`, see below), 
 2. Login shell reads `~/.profile`, whose tail is:
    ```sh
    if [ "$(tty)" = /dev/tty1 ] && [ -z "$WAYLAND_DISPLAY" ]; then
-       exec cage -- cog "$(cat ~/kiosk-url 2>/dev/null || echo about:blank)" >~/kiosk.log 2>&1
+       exec cage -- sh -c 'wlr-randr --output DVI-I-1 --transform flipped-180; exec cog "$1"' sh \
+           "$(cat ~/kiosk-url 2>/dev/null || echo about:blank)" >~/kiosk.log 2>&1
    fi
    ```
+   The output is flipped vertically (top↔bottom, `flipped-180` = mirror + 180°) inside cage before cog starts.
+   `wlr-randr` is `~/bin/wlr-randr`, extracted from Debian's `wlr-randr` .deb (no root needed; `apt install
+   wlr-randr` would work too). Live check/change from SSH:
+   `XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=wayland-0 ~/bin/wlr-randr [--output DVI-I-1 --transform normal]`.
    Only tty1 starts the kiosk; SSH logins are unaffected. If `kiosk-url` points at
    `http://127.0.0.1/…`, `.profile` first waits up to 10 s for the PHP server to listen.
 3. `cage` runs `cog` fullscreen. When cog exits, cage exits, the login shell ends,

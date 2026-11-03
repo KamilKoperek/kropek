@@ -44,7 +44,7 @@ const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d');
 // Render resolution relative to CSS pixels. The blur hides the low resolution,
 // and it cuts the pixels to fill and blur by ~10x (more on high-DPI screens).
-const RES = 0.25; // quarter resolution: on the kiosk ~22 fps vs ~10 fps at 1 (canvas blur dominates draw time)
+const RES = 1; // full resolution, no upscaling (sharp). 0.25 gave ~22 fps vs ~10 fps here, but looked blurry
 const BLUR = 6 * RES; // 6 CSS px of blur, in buffer pixels
 
 const COUNT = 420;          // number of unit points (total mass)
