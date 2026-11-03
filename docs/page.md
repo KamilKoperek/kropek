@@ -66,6 +66,7 @@ Without mic data both stay 0 (original behaviour).
 
 ### Test override
 
+The fps counter and the test box are hidden unless the URL has `?debug` (e.g. `http://192.168.1.6/kropek.html?debug`).
 The box under the fps counter has a **test speech** checkbox + slider (0–100 %) that replaces the mic.
 On the kiosk use the URL: `./kiosk-restart 'http://127.0.0.1/kropek.html?speech=80'` (calm) or `?speech=10`
 (nervous); `./kiosk-restart http://127.0.0.1/kropek.html` returns to the mic. `kiosk-url` keeps the override across reboots.

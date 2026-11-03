@@ -17,6 +17,8 @@
   #test { position: fixed; top: 36px; left: 8px; padding: 3px 8px; background: #111; color: #ececf1; accent-color: #b6f24a;
           font: 12px ui-monospace, Menlo, monospace; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
   /* NUKE PROTOCOL (nuke.php): a GIF covers everything and the Kropek loop pauses. */
+  /* fps counter and test controls only with ?debug in the URL. */
+  body:not(.debug) #fps, body:not(.debug) #test { display: none; }
   #nuke { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; z-index: 10; }
   /* Box's IP on the phone hotspot (net.php), shown for 30 s after it connects. Above the NUKE GIF. */
   #netip { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); padding: 16px 28px; z-index: 20;
@@ -127,6 +129,7 @@ const testSpeech = document.getElementById('testSpeech'), testLoud = document.ge
 const showTest = () => { document.getElementById('testLoudVal').textContent = (+testLoud.value).toFixed(2); };
 for (const el of [testSpeech, testLoud]) el.addEventListener('input', () => { testOn.checked = true; showTest(); });
 const params = new URLSearchParams(location.search);
+if (params.has('debug')) document.body.classList.add('debug');
 if (params.has('speech')) { testOn.checked = true; testSpeech.checked = params.get('speech') === '1'; }
 if (params.has('loud')) { testOn.checked = true; testLoud.value = params.get('loud'); }
 showTest();
