@@ -23,6 +23,15 @@
   h1 { margin: 0; font-size: clamp(72px, 22vw, 340px); line-height: .85; font-weight: 900; letter-spacing: -.05em; }
   .hint { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
 
+  /* Scroll cue: tells visitors there is more below the full-screen hero; fades once they scroll. */
+  .hero { position: relative; }
+  .scroll { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; color: inherit; text-decoration: none; font-size: 18px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; transition: opacity .4s; }
+  .scroll svg { width: 36px; height: 36px; animation: nudge 1.6s ease-in-out infinite; }
+  .scrolled .scroll { opacity: 0; pointer-events: none; }
+  @keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .scroll svg { animation: none; } }
+
   section { padding: 15vh 24px; max-width: 1100px; margin: 0 auto; }
   .about p { font-size: clamp(22px, 3.2vw, 38px); line-height: 1.3; margin: 0 0 1em; font-weight: 500; letter-spacing: -.01em; }
   .about p:last-child { margin: 0; }
@@ -36,6 +45,7 @@
 
   @media (max-width: 640px) {
     .top, .bottom, footer { flex-direction: column; gap: 4px; }
+    .scroll { bottom: 110px; }
     dl { grid-template-columns: 1fr; }
     dt { padding: 18px 0 0; border-bottom: 0; }
     dd { padding-top: 4px; }
@@ -51,9 +61,13 @@
       <h1>Kropek</h1>
     </div>
     <div class="bottom"><span>Instalacja artystyczna</span><span class="hint">Porusz kursorem — hałas go stresuje</span></div>
+    <a class="scroll" href="#o-projekcie" aria-label="Przewiń do opisu projektu">
+      <span>Przewiń</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v16M5 13l7 7 7-7"/></svg>
+    </a>
   </header>
 
-  <section class="about">
+  <section class="about" id="o-projekcie">
     <p>Kropek jest instalacją artystyczną, która ma przedstawiać bezpośrednie konsekwencje zanieczyszczenia hałasem.</p>
     <p>Szumy i szeroko pojęty hałas „stresują” Kropka, co objawia się widocznie wzmożonym ruchem obiektu samego w sobie zarówno jak i w obrębie instalacji.</p>
     <p>Sama jego nazwa ma wywołać w odbiorcy empatię. Jego duża reaktywność na otoczenie ma zachęcić odbiorcę do mówienia do niego tak, aby się „uspokoił”, co objawia się płynnym i widocznie wolniejszym poruszaniem się.</p>
@@ -82,6 +96,11 @@ const bctx = buf.getContext('2d');
 const RES = 0.5;            // render at half resolution; blur + contrast hide it
 const BLUR = 6 * RES;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Hide the scroll cue once the visitor has started scrolling.
+const markScrolled = () => document.body.classList.toggle('scrolled', scrollY > 40);
+addEventListener('scroll', markScrolled, { passive: true });
+markScrolled();
 
 let W, H;
 function resize() {
