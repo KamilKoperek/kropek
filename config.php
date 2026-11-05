@@ -48,7 +48,7 @@ $cfg = load($file);
 <title>Kropek – ustawienia</title>
 <link rel="stylesheet" href="ui.css">
 <header class="topbar"><nav>
-  <a class="brand" href="index.html">Kropek</a>
+  <a class="brand" href="settings.html">Kropek</a>
   <a href="voice.html">Głos</a><a href="config.php" aria-current="page">Ustawienia</a><a href="deploy.php">Wdrożenie</a><a class="nuke-link" href="nuke.php">Nuke</a>
 </nav></header>
 <main>

@@ -119,7 +119,7 @@ $active = current_gif($file, $gifs);
 <link rel="stylesheet" href="ui.css">
 <header class="topbar">
   <nav>
-    <a class="brand" href="index.html">Kropek</a>
+    <a class="brand" href="settings.html">Kropek</a>
     <a href="voice.html">Głos</a><a href="config.php">Ustawienia</a><a href="deploy.php">Wdrożenie</a><a
       class="nuke-link" href="nuke.php" aria-current="page">Nuke</a>
   </nav>

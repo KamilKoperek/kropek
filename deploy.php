@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title>Kropek – wdrożenie</title>
 <link rel="stylesheet" href="ui.css">
 <header class="topbar"><nav>
-  <a class="brand" href="index.html">Kropek</a>
+  <a class="brand" href="settings.html">Kropek</a>
   <a href="voice.html">Głos</a><a href="config.php">Ustawienia</a><a href="deploy.php" aria-current="page">Wdrożenie</a><a class="nuke-link" href="nuke.php">Nuke</a>
 </nav></header>
 <main>

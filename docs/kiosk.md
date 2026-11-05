@@ -61,7 +61,7 @@ user manager (and PHP) running while cog restarts; without it, PHP restarts with
 | `kiosk-root-setup.sh` | One-time root setup of the tty1 autologin drop-in |
 | `kiosk.log` | stdout/stderr of cage+cog (overwritten on each start) |
 | `kropek.html` | Previous default page (see [page.md](page.md)); `kropek.html.bak` = older version |
-| `index.html` | Home page with links to the other pages |
+| `settings.html` | Panel with links to the other pages (`/` serves the `index.php` landing page) |
 
 ## Operations
 
